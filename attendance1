@@ -1,0 +1,103 @@
+from pytube import YouTube
+import cv2
+import face_recognition
+import numpy as np
+import os
+from datetime import datetime
+
+# Function to fetch frames from a YouTube video
+def fetch_frames(youtube_url):
+    # Create a YouTube object
+    yt = YouTube(youtube_url)
+    # Get the highest resolution video stream
+    stream = yt.streams.get_highest_resolution()
+    # Open the video stream
+    cap = cv2.VideoCapture(stream.url)
+    while True:
+        # Read a frame
+        success, frame = cap.read()
+        if not success:
+            break
+        # Yield the frame
+        yield frame
+    # Release the video capture object
+    cap.release()
+
+# Function to process frames
+def process_frames(frames):
+    # Load known images
+    path = 'face1/ImagesAttendence'
+    images = []
+    classNames = []
+    myList = os.listdir(path)
+    print(myList)
+    print("Total Classes Detected:", len(myList))
+    for x, cl in enumerate(myList):
+        curImg = cv2.imread(f'{path}/{cl}')
+        images.append(curImg)
+        classNames.append(os.path.splitext(cl)[0])
+    print(classNames)
+
+    encodeListKnown = findEncodings(images)
+    print('Encodings Complete')
+
+    for frame in frames:
+        imgS = cv2.resize(frame, (0, 0), None, 0.25, 0.25)
+        imgS = cv2.cvtColor(imgS, cv2.COLOR_BGR2RGB)
+
+        facesCurFrame = face_recognition.face_locations(imgS)
+        encodesCurFrame = face_recognition.face_encodings(imgS, facesCurFrame)
+
+        for encodeFace, faceLoc in zip(encodesCurFrame, facesCurFrame):
+            matches = face_recognition.compare_faces(encodeListKnown, encodeFace)
+            faceDis = face_recognition.face_distance(encodeListKnown, encodeFace)
+            print(faceDis)
+            matchIndex = np.argmin(faceDis)
+
+            if matches[matchIndex]:
+                name = classNames[matchIndex].upper()
+                # print(name)
+                y1, x2, y2, x1 = faceLoc
+                y1, x2, y2, x1 = y1 * 4, x2 * 4, y2 * 4, x1 * 4
+                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                cv2.rectangle(frame, (x1, y2 - 35), (x2, y2), (0, 255, 0), cv2.FILLED)
+                cv2.putText(frame, name, (x1 + 6, y2 - 6), cv2.FONT_HERSHEY_COMPLEX, 1, (255, 255, 255), 2)
+                markAttendance(name)
+
+        cv2.imshow('Webcam', frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+    cv2.destroyAllWindows()
+
+# Function to encode known faces
+def findEncodings(images):
+    encodeList = []
+    for img in images:
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        encode = face_recognition.face_encodings(img)[0]
+        encodeList.append(encode)
+    return encodeList
+
+# Function to mark attendance
+def markAttendance(name):
+    with open('C:/Users/nuhaj/OneDrive/Desktop/miniprojectfinal/face1/attendence.csv', 'r+') as f:
+        myDataList = f.readlines()
+        nameList = [line.split(',')[0] for line in myDataList]
+
+        if name not in nameList:
+            now = datetime.now()
+            date_string = now.strftime("%Y-%m-%d")
+            time_string = now.strftime("%H:%M:%S")
+
+            f.write(f'\n{name},{date_string},{time_string}')
+
+# YouTube video URL
+youtube_url = 'https://youtu.be/gV6hP9wpMW8?feature=shared'
+
+# Fetch frames from the YouTube video
+frames = fetch_frames(youtube_url)
+
+# Process frames
+process_frames(frames)
+
